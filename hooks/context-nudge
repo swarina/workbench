@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""UserPromptSubmit hook: ask for a handoff when the session context is large.
+
+Wire it in settings by hand (see README). Prints nothing, and always exits 0,
+unless a nudge is due.
+"""
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+try:
+    from wb.live import nudge
+    text = nudge(json.load(sys.stdin))
+    if text:
+        print(text)
+except Exception:  # a hook must never block a prompt
+    pass
+sys.exit(0)
