@@ -61,7 +61,7 @@ def check(root: str) -> List[str]:
         if len(text.splitlines()) > SKILL_MAX_LINES:
             problems.append(f"skills/{name}: over {SKILL_MAX_LINES} lines; split into reference files")
 
-    for folder in ("bin", "hooks"):
+    for folder in ("bin", "hooks", "cloud"):
         d = os.path.join(root, folder)
         for name in sorted(os.listdir(d)) if os.path.isdir(d) else []:
             p = os.path.join(d, name)
