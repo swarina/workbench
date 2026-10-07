@@ -45,6 +45,20 @@ description in the cloud).
 Result: pending. Unverified: private-repo clone from the setup script, and that the
 import survives the platform's own `CLAUDE.md` handling. Check `/context` in a cloud session.
 
+## 2026-10-07 Cache invalidation is small and mostly not actionable
+Evidence: first report showed 65 invalidation turns (21M tokens). 16 were a detector
+bug: zero-usage `<synthetic>` turns read as a context of 0 followed by a full rewrite.
+Real cases: about 46 unique (forked sessions double-counted some), roughly 12M tokens,
+about 13% of cache writes and under 3% of estimated cost. Never in tool loops (0.1%
+rate); about 6.5% of turns right after a user prompt. Model switches caused 8 of them
+(a switch at 594k tokens re-wrote 515k). API errors raise the rate to 25%. Stop hooks
+and queued prompts are not the cause: their rates match the baseline. About 30 cases
+have no visible cause, likely server-side.
+Fix: script. `cache_model_switch` is now reported separately and is the only actionable
+part (switch models at a handoff or early). The synthetic-turn bug is fixed and tested.
+Result: no workflow change needed. Idle expiry (`cache_rewrite`, about 60M tokens) is
+four times larger and is what handoff and the nudge hook target.
+
 ## 2026-10-07 Diffs are the largest shell output
 Evidence: `git diff`, `gh pr` and `git show` produced about 380k tokens of output.
 Fix: script (`diff-summary`) plus an instruction line.
