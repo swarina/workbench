@@ -64,8 +64,12 @@ def cache_rewrite(s: Session) -> List[Finding]:
     """
     expired = {"n": 0, "tokens": 0, "gap": 0.0}
     invalidated = {"n": 0, "tokens": 0}
+    switched = {"n": 0, "tokens": 0}
     ttl = THRESHOLDS["cache_ttl_5m"]
-    for prev, cur in zip(s.turns, s.turns[1:]):
+    # Synthetic turns (injected messages, no API call, zero usage) would look like a
+    # context of 0 followed by a full rewrite.
+    real = [t for t in s.turns if t.model != "<synthetic>" and t.context > 0]
+    for prev, cur in zip(real, real[1:]):
         if prev.cache_write_5m or prev.cache_write_1h:
             ttl = THRESHOLDS["cache_ttl_1h"] if prev.cache_write_1h else THRESHOLDS["cache_ttl_5m"]
         if cur.context < THRESHOLDS["rewrite_min_context"]:
@@ -80,6 +84,9 @@ def cache_rewrite(s: Session) -> List[Finding]:
             expired["n"] += 1
             expired["tokens"] += cur.cache_write
             expired["gap"] = max(expired["gap"], gap)
+        elif prev.model and cur.model and prev.model != cur.model:
+            switched["n"] += 1  # the cache is per model, so switching rewrites the context
+            switched["tokens"] += cur.cache_write
         else:
             invalidated["n"] += 1
             invalidated["tokens"] += cur.cache_write
@@ -92,11 +99,18 @@ def cache_rewrite(s: Session) -> List[Finding]:
             "Hand off before stepping away from a large session; resuming it pays for the whole context again.",
             expired["tokens"],
         ))
+    if switched["n"]:
+        found.append(Finding(
+            "cache_model_switch",
+            f"{switched['n']} model switches re-cached a large context",
+            "Switch models at a handoff or early in a session; a mid-session switch pays for the whole context again.",
+            switched["tokens"],
+        ))
     if invalidated["n"]:
         found.append(Finding(
             "cache_invalidation",
-            f"{invalidated['n']} large contexts re-cached with no idle gap",
-            "Something changed the cached prefix mid-session (tools, settings, instructions); find and avoid it.",
+            f"{invalidated['n']} large contexts re-cached with no idle gap or model switch",
+            "Mostly unexplained (API errors and server-side misses are the likely causes); not actionable on its own.",
             invalidated["tokens"],
         ))
     return found

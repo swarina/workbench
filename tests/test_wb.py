@@ -143,6 +143,23 @@ class CacheRewriteTest(unittest.TestCase):
         self.assertNotIn("cache_rewrite", self.names(s))
         self.assertNotIn("cache_invalidation", self.names(s))
 
+    def test_model_switch_is_its_own_finding(self):
+        s = self.turns(gap=60, second_read=20_000)
+        s.turns[0].model, s.turns[1].model = "opus", "sonnet"
+        found = self.names(s)
+        self.assertIn("cache_model_switch", found)
+        self.assertNotIn("cache_invalidation", found)
+
+    def test_synthetic_turns_are_not_a_context_drop(self):
+        s = self.turns(gap=60, second_read=20_000)
+        synthetic = Turn(timestamp=ts(30), model="<synthetic>")
+        s.turns.insert(1, synthetic)
+        s.turns[0].model = s.turns[2].model = "opus"
+        # Without skipping the zero-usage turn this reads as 0 -> 120k, a phantom rewrite.
+        self.assertIn("cache_invalidation", self.names(s))
+        s.turns[2].cache_write = 1_000
+        self.assertEqual(self.names(s) & {"cache_invalidation", "cache_rewrite", "cache_model_switch"}, set())
+
     def test_small_contexts_ignored(self):
         s = Session("claude", "s", "p", turns=[Turn(timestamp=ts(0), cache_read=20_000),
                                                Turn(timestamp=ts(9000), cache_write=20_000)])
