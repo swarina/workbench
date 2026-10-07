@@ -38,6 +38,7 @@ session; after a week compare `wb report --since 7` against the baseline.
 | `skills/<name>/SKILL.md` | Focused procedures, shared by both tools. | On use |
 | `agents/<name>.md` | Claude Code subagents (none yet). | On delegation |
 | `bin/` | Deterministic helpers on PATH: `wb`, `diff-summary`. | When called |
+| `hooks/` | Hook scripts, wired into settings by hand: `context-nudge`. | On the hook event |
 | `wb/` | Python package behind `wb` (standard library only). | n/a |
 | `lessons.md` | Evidence-backed failures and where each fix belongs. | Never loaded automatically |
 | `tests/` | Unit tests, including a lint of this repo. | n/a |
@@ -59,10 +60,37 @@ overwritten; they are reported as conflicts. Override targets with `CLAUDE_HOME`
     wb report --project <name>
     wb report --worst 3            # per-session reports for the most expensive sessions
     wb report --session <id>       # one session
-    wb report --json               # for diffing before and after a change
+    wb report --json               # machine-readable summary
+    wb report --by branch          # cost per branch, a proxy for cost per task or PR
+    wb report --save baseline      # also save a snapshot to ~/.workbench/snapshots
+    wb compare baseline latest     # before and after, normalized per turn and session
 
 Token classes are weighted by approximate relative price to rank waste. The estimates
 are for comparison, not accounting.
+
+Detectors: `long_session`, `cache_rewrite` (large context re-cached after an idle gap),
+`cache_invalidation` (re-cached with no gap, so the prefix changed), `startup_overhead`,
+`large_outputs`, `repeat_reads`, `duplicate_calls`, `unbatched_calls`.
+
+## Live visibility and enforcement
+
+Two small pieces act during a session. Neither is installed automatically, because both
+need an entry in your Claude Code settings.
+
+Status line, showing context size, session cost and a handoff hint:
+
+    "statusLine": { "type": "command", "command": "wb statusline" }
+
+Handoff nudge: on each prompt, if context is above 200k tokens, one line asks the agent
+to run `handoff` at the next boundary (above 400k: now). It repeats at most every 10
+prompts, and always exits 0:
+
+    "hooks": { "UserPromptSubmit": [ { "hooks": [
+      { "type": "command", "command": "/path/to/workbench/hooks/context-nudge" } ] } ] }
+
+The status line reads `transcript_path` and, when present, `cost.total_cost_usd` and
+`context_window.context_window_size` from the JSON Claude Code sends. Missing fields
+shorten the line rather than break it. Thresholds live in `wb/live.py`.
 
 ## The loop
 

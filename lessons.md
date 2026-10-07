@@ -17,6 +17,12 @@ Cache reads are about 69% of estimated cost; all tool output is under 1% by volu
 Fix: skill (`handoff`) plus an instruction line (one task or PR per session).
 Result: pending. Compare `wb report --since 7` after a week of use.
 
+## 2026-10-07 Long-session cost was invisible while working
+Evidence: no live signal of context size existed; sessions reached about 1M tokens.
+Fix: script and hook (`wb statusline`, `hooks/context-nudge`), plus `wb compare` to
+measure the effect. Neither is active until wired into settings.
+Result: pending. Check peak context p50 and p90 with `wb compare baseline latest`.
+
 ## 2026-10-07 Diffs are the largest shell output
 Evidence: `git diff`, `gh pr` and `git show` produced about 380k tokens of output.
 Fix: script (`diff-summary`) plus an instruction line.
