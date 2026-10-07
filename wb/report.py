@@ -27,13 +27,26 @@ def summarize(sessions: List[Session], findings: List[Finding]) -> Dict:
     cost = {k: totals[k] * w for k, w in COST_WEIGHTS.items()}
     cost_sum = sum(cost.values()) or 1
 
-    projects = defaultdict(lambda: {"sessions": 0, "subagent_runs": 0, "turns": 0, "cost_units": 0.0})
+    projects = defaultdict(lambda: {"sessions": 0, "subagent_runs": 0, "turns": 0,
+                                    "cost_units": 0.0, "startup": []})
     tools = defaultdict(lambda: {"calls": 0, "output_tokens": 0})
+    models = defaultdict(float)
+    kinds = defaultdict(float)
+    branches = defaultdict(lambda: {"turns": 0, "cost_units": 0.0, "peak_context": 0})
     for s in sessions:
         p = projects[s.project or "?"]
         p["sessions" if s.kind == "main" else "subagent_runs"] += 1
         p["turns"] += len(s.turns)
         p["cost_units"] += s.cost_units
+        if s.kind == "main":
+            p["startup"].append(s.startup_context)
+        kinds[s.kind] += s.cost_units
+        for t in s.turns:
+            models[t.model or "?"] += t.cost_units
+            b = branches[(s.project or "?", t.branch or "(none)")]
+            b["turns"] += 1
+            b["cost_units"] += t.cost_units
+            b["peak_context"] = max(b["peak_context"], t.context)
         for c in s.calls:
             t = tools[c.label if c.label.startswith("$") else c.name]
             t["calls"] += 1
@@ -48,15 +61,27 @@ def summarize(sessions: List[Session], findings: List[Finding]) -> Dict:
 
     turns = sorted(len(s.turns) for s in main)
     peaks = sorted(s.peak_context for s in main)
+    for p in projects.values():
+        startup = sorted(p.pop("startup"))
+        p["startup_p50"], p["startup_max"] = _pct(startup, 0.5), (startup[-1] if startup else 0)
+    total_units = sum(kinds.values()) or 1
     return {
         "sessions": len(main),
         "subagent_runs": len(sessions) - len(main),
         "turns": sum(len(s.turns) for s in sessions),
+        "cost_units": round(sum(s.cost_units for s in sessions)),
         "tokens": totals,
         "cost_share": {k: round(v / cost_sum, 3) for k, v in cost.items()},
         "turns_per_session": {"p50": _pct(turns, 0.5), "p90": _pct(turns, 0.9)},
         "peak_context": {"p50": _pct(peaks, 0.5), "p90": _pct(peaks, 0.9)},
         "projects": dict(sorted(projects.items(), key=lambda kv: -kv[1]["cost_units"])),
+        "cost_by_kind": {k: round(v / total_units, 3) for k, v in sorted(kinds.items())},
+        "cost_by_model": {m: round(v / total_units, 3)
+                          for m, v in sorted(models.items(), key=lambda kv: -kv[1])},
+        "branches": [
+            {"project": proj, "branch": br, **vals}
+            for (proj, br), vals in sorted(branches.items(), key=lambda kv: -kv[1]["cost_units"])
+        ],
         "tools": dict(sorted(tools.items(), key=lambda kv: -kv[1]["output_tokens"])),
         "waste": {
             name: {"sessions": len(d["sessions"]), "est_tokens": d["est_tokens"],
@@ -85,7 +110,13 @@ def render_summary(summary: Dict, top: int = 10) -> str:
     total_units = sum(p["cost_units"] for p in summary["projects"].values()) or 1
     for name, p in list(summary["projects"].items())[:top]:
         lines.append(f"  {name[:32]:32} {p['cost_units'] / total_units:>4.0%}  "
-                     f"{p['sessions']} sessions, {p['subagent_runs']} subagents, {p['turns']} turns")
+                     f"{p['sessions']} sessions, {p['subagent_runs']} subagents, {p['turns']} turns, "
+                     f"startup context p50 {_k(p['startup_p50'])}")
+    kinds = summary["cost_by_kind"]
+    lines += ["", "Cost by session kind: " + ", ".join(f"{k} {v:.0%}" for k, v in kinds.items()),
+              "Cost by model"]
+    for model, share in list(summary["cost_by_model"].items())[:top]:
+        lines.append(f"  {model[:32]:32} {share:>4.0%}")
     lines += ["", "Tool output entering context"]
     for name, tl in list(summary["tools"].items())[:top]:
         lines.append(f"  {name[:32]:32} {_k(tl['output_tokens']):>6} tokens  {tl['calls']} calls")
@@ -95,6 +126,22 @@ def render_summary(summary: Dict, top: int = 10) -> str:
     for name, w in summary["waste"].items():
         lines.append(f"  {name:16} {_k(w['est_tokens']):>7}  in {w['sessions']} sessions")
         lines.append(f"  {'':16} -> {w['suggestion']}")
+    return "\n".join(lines)
+
+
+def render_branches(summary: Dict, top: int = 15) -> str:
+    """Cost per (project, branch). Branch is a proxy for task; a branch worked across
+    several sessions is combined, and work done on main is lumped together."""
+    rows = summary["branches"]
+    total = sum(r["cost_units"] for r in rows) or 1
+    lines = ["Estimated cost by branch (branch is a proxy for task)"]
+    for r in rows[:top]:
+        label = f"{r['project']}:{r['branch']}"
+        lines.append(f"  {label[:44]:44} {r['cost_units'] / total:>4.0%}  "
+                     f"{r['turns']} turns, peak context {_k(r['peak_context'])}")
+    if len(rows) > top:
+        rest = sum(r["cost_units"] for r in rows[top:])
+        lines.append(f"  {'(' + str(len(rows) - top) + ' more)':44} {rest / total:>4.0%}")
     return "\n".join(lines)
 
 
