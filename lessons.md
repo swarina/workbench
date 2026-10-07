@@ -35,6 +35,16 @@ per turn, roughly 5% of context at the median, against 85% for messages. Revisit
 if a project's startup context exceeds 100k.
 Result: confirms that session length, not setup, is the lever. Handoff stays first.
 
+## 2026-10-07 Workbench did not reach cloud sessions
+Evidence: Docs and a quarry cloud `/context`. User-level `~/.claude` (instructions, skills,
+hooks) is not carried to a cloud VM, and the VM ships its own `~/.claude/CLAUDE.md`.
+A local `.workbench/task.md` would also be lost, since the next session is a fresh clone.
+Fix: script (`cloud/setup.sh` run from the environment setup script, importing rather
+than replacing `CLAUDE.md`) plus a skill change (handoff saves state in the PR
+description in the cloud).
+Result: pending. Unverified: private-repo clone from the setup script, and that the
+import survives the platform's own `CLAUDE.md` handling. Check `/context` in a cloud session.
+
 ## 2026-10-07 Diffs are the largest shell output
 Evidence: `git diff`, `gh pr` and `git show` produced about 380k tokens of output.
 Fix: script (`diff-summary`) plus an instruction line.

@@ -39,6 +39,7 @@ session; after a week compare `wb report --since 7` against the baseline.
 | `agents/<name>.md` | Claude Code subagents (none yet). | On delegation |
 | `bin/` | Deterministic helpers on PATH: `wb`, `diff-summary`. | When called |
 | `hooks/` | Hook scripts, wired into settings by hand: `context-nudge`. | On the hook event |
+| `cloud/` | Bootstrap for cloud session VMs: `setup.sh`. | At cloud environment setup |
 | `wb/` | Python package behind `wb` (standard library only). | n/a |
 | `lessons.md` | Evidence-backed failures and where each fix belongs. | Never loaded automatically |
 | `tests/` | Unit tests, including a lint of this repo. | n/a |
@@ -93,6 +94,35 @@ reads `transcript_path`, `cost.total_cost_usd` and `context_window.context_windo
 from the JSON Claude Code sends; the nudge hook reads `session_id` and `transcript_path`.
 Field names were checked against the Claude Code docs on 2026-10-07. Missing fields
 shorten the line rather than break it. Thresholds live in `wb/live.py`.
+
+## Cloud sessions
+
+Cloud sessions run on a fresh VM with only your repo, so nothing in `~/.claude` reaches
+them. Instead of committing config into every repo, install Workbench from the
+environment's setup script. In claude.ai/code, open the environment settings and paste
+this into **Setup script**:
+
+    #!/bin/bash
+    git clone -q --depth 1 https://github.com/swarina/workbench.git /opt/workbench 2>/dev/null \
+      || git -C /opt/workbench pull -q --ff-only
+    bash /opt/workbench/cloud/setup.sh || true
+
+`cloud/setup.sh` imports `instructions.md` into the VM's own `CLAUDE.md` (it does not
+replace it), links the `handoff` skill and helpers, registers the nudge hook, and exits
+0 whatever happens. Verify in a new cloud session with `/context`: the memory files
+should include `instructions.md`.
+
+- **Private repo:** the clone must succeed from the VM. If it fails, the session still
+  starts, without Workbench. Check the setup log, and if needed make the repo public or
+  provide read access.
+- **Updates:** the setup result is cached for about a week and rebuilt when the script
+  changes. Edit the script (a comment is enough) to pick up Workbench changes sooner.
+- **Handoff:** the VM is discarded and the next session starts from a fresh clone, so in
+  cloud sessions `handoff` saves state in the PR description (the `workbench:task`
+  block) instead of `.workbench/task.md`.
+- **Measurement:** cloud transcripts stay on the VM, so `wb report` on your Mac cannot
+  see them. In a cloud session, ask for `wb report --session <id>` to inspect that
+  session, or use `/context`.
 
 ## The loop
 
