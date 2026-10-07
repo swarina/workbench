@@ -27,7 +27,8 @@ These apply to every project. A project's own instructions win where they confli
 ## Sessions
 - One task or PR per session. At a task boundary, or when context is large, run the
   `handoff` skill and continue in a fresh session.
-- If `.workbench/task.md` exists at session start, read it before anything else.
+- If `.workbench/task.md` exists at session start, read it before anything else. In a
+  cloud session, read the `workbench:task` block of the current PR description instead.
 
 ## Reporting
 - Lead with the outcome. Say what was verified and how, what was not, and what risk remains.

@@ -13,11 +13,17 @@ skill replaces a large conversation with a short state file a new session can st
 
 1. Get the mechanical facts from tools, not memory: `git status --short`,
    `git diff --stat`, current branch, and the last test or check command with its result.
-2. Write `.workbench/task.md` in the project root using the template below. Overwrite
-   the previous version; this file is current state, not a log.
-3. If `.workbench/` is not ignored, add it to `.git/info/exclude`. Never commit it.
-4. Tell the user in two or three lines what is done and what is next, and that a fresh
-   session can resume from the file.
+2. Write the state using the template below, replacing any previous version; it is
+   current state, not a log. Where it goes depends on where you are:
+   - **Local machine:** `.workbench/task.md` in the project root. If `.workbench/` is not
+     ignored, add it to `.git/info/exclude`. Never commit it.
+   - **Cloud session** (`test -f ~/.claude/.workbench-cloud`): the VM and its files are
+     discarded and the next session starts from a fresh clone, so a local file is lost.
+     Put the state in the PR description instead, between `<!-- workbench:task -->` and
+     `<!-- /workbench:task -->`, using `gh pr edit` (create a draft PR first if none
+     exists). Replace only that block and keep the rest of the description.
+3. Tell the user in two or three lines what is done and what is next, and where a fresh
+   session can resume from.
 
 ## Template
 
