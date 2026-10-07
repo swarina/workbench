@@ -23,6 +23,18 @@ Fix: script and hook (`wb statusline`, `hooks/context-nudge`), plus `wb compare`
 measure the effect. Neither is active until wired into settings.
 Result: pending. Check peak context p50 and p90 with `wb compare baseline latest`.
 
+## 2026-10-07 Startup overhead is real but not the main cost
+Evidence: `/context` in a quarry session (a cloud environment, not the local Mac) at 416k:
+messages 354k (85%); fixed overhead about 62k (MCP tools 22k, system tools 21k, system
+prompt 12k, skills 6k, MCP instructions 2k, memory files under 1k). Another 51k of MCP
+tools are deferred and cost nothing until loaded. This matches the 62k to 64k first-turn
+context `wb` measured for quarry and ravel. Workbench's own instructions are a rounding
+error at this scale.
+Fix: none for now. Trimming every unused connector would save at most about 22k tokens
+per turn, roughly 5% of context at the median, against 85% for messages. Revisit only
+if a project's startup context exceeds 100k.
+Result: confirms that session length, not setup, is the lever. Handoff stays first.
+
 ## 2026-10-07 Diffs are the largest shell output
 Evidence: `git diff`, `gh pr` and `git show` produced about 380k tokens of output.
 Fix: script (`diff-summary`) plus an instruction line.
