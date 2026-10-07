@@ -1,11 +1,13 @@
-"""wb: Workbench command line. Subcommands: report, check."""
+"""wb: Workbench command line. Subcommands: report, compare, statusline, check."""
 import argparse
+import json
 import os
 import sys
 import time
 
 from . import check as check_mod
-from . import report
+from . import compare as compare_mod
+from . import report, statusline
 from .detectors import run_all
 from .sources import SOURCES
 
@@ -44,7 +46,31 @@ def cmd_report(args) -> int:
             print()
         return 0
     summary = report.summarize(sessions, findings)
-    print(report.to_json(summary) if args.json else report.render_summary(summary, args.top))
+    if args.save is not None:
+        print("Saved " + compare_mod.save(summary, args.save), file=sys.stderr)
+    if args.by == "branch":
+        print(report.render_branches(summary, args.top))
+    else:
+        print(report.to_json(summary) if args.json else report.render_summary(summary, args.top))
+    return 0
+
+
+def cmd_compare(args) -> int:
+    try:
+        a, b = compare_mod.load(args.before), compare_mod.load(args.after)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(compare_mod.compare(a, b, args.before, args.after))
+    return 0
+
+
+def cmd_statusline(args) -> int:
+    # Never fail: a broken status line is worse than an empty one.
+    try:
+        print(statusline.render(json.load(sys.stdin)))
+    except Exception:
+        print("")
     return 0
 
 
@@ -70,7 +96,18 @@ def main(argv=None) -> int:
                    help="per-session reports for the N most expensive main sessions")
     r.add_argument("--top", type=int, default=10, help="rows per table")
     r.add_argument("--json", action="store_true", help="machine-readable summary")
+    r.add_argument("--by", choices=["branch"], help="group cost by branch instead of the overview")
+    r.add_argument("--save", nargs="?", const="", metavar="NAME",
+                   help="also save a snapshot (see `wb compare`)")
     r.set_defaults(fn=cmd_report)
+
+    cmp_ = sub.add_parser("compare", help="compare two saved snapshots")
+    cmp_.add_argument("before", help="snapshot file, or a name fragment")
+    cmp_.add_argument("after", help="snapshot file, or a name fragment")
+    cmp_.set_defaults(fn=cmd_compare)
+
+    sl = sub.add_parser("statusline", help="status line for Claude Code (reads JSON on stdin)")
+    sl.set_defaults(fn=cmd_statusline)
 
     c = sub.add_parser("check", help="lint this repo (budgets, skill frontmatter)")
     c.set_defaults(fn=cmd_check)
