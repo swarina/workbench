@@ -7,7 +7,7 @@ import json
 from collections import Counter, defaultdict
 from typing import Callable, List
 
-from .model import EDIT_TOOLS, READ_ONLY_TOOLS, Finding, Session
+from .model import EDIT_TOOLS, READ_ONLY_TOOLS, Finding, Session, parse_timestamp
 
 THRESHOLDS = {
     "context_baseline": 150_000,   # context a fresh session needs for real work
@@ -16,6 +16,11 @@ THRESHOLDS = {
     "large_output_tokens": 2_000,  # single tool result size worth flagging
     "duplicate_calls": 3,          # identical search/fetch calls before flagging
     "unbatched_run": 4,            # consecutive single read-only-call turns
+    "startup_overhead": 40_000,    # first-turn context above this suggests heavy plugins or instructions
+    "rewrite_min_context": 50_000, # ignore cache rewrites of small contexts
+    "rewrite_write_share": 0.5,    # a turn is a rewrite when this share of its context was cache-written
+    "cache_ttl_5m": 300,           # seconds a 5-minute cache entry survives
+    "cache_ttl_1h": 3600,          # seconds a 1-hour cache entry survives
 }
 
 DETECTORS: List[Callable[[Session], List[Finding]]] = []
@@ -46,6 +51,67 @@ def long_session(s: Session) -> List[Finding]:
         f"{len(s.turns)} turns, context peaked at {round(s.peak_context / 1000)}k",
         "Hand off at task boundaries and continue in a fresh session (handoff skill).",
         excess,
+    )]
+
+
+@detector
+def cache_rewrite(s: Session) -> List[Finding]:
+    """Turns that re-wrote most of a large context into the cache.
+
+    Two causes with different fixes: the cache expired while the session sat idle, or
+    the cached prefix changed without an idle gap (invalidation). A sharp context drop
+    is compaction, which legitimately rewrites, so it is excluded.
+    """
+    expired = {"n": 0, "tokens": 0, "gap": 0.0}
+    invalidated = {"n": 0, "tokens": 0}
+    ttl = THRESHOLDS["cache_ttl_5m"]
+    for prev, cur in zip(s.turns, s.turns[1:]):
+        if prev.cache_write_5m or prev.cache_write_1h:
+            ttl = THRESHOLDS["cache_ttl_1h"] if prev.cache_write_1h else THRESHOLDS["cache_ttl_5m"]
+        if cur.context < THRESHOLDS["rewrite_min_context"]:
+            continue
+        if cur.cache_write < THRESHOLDS["rewrite_write_share"] * cur.context:
+            continue
+        if cur.context < 0.7 * prev.context:
+            continue
+        t0, t1 = parse_timestamp(prev.timestamp), parse_timestamp(cur.timestamp)
+        gap = (t1 - t0) if t0 is not None and t1 is not None else 0.0
+        if gap > ttl:
+            expired["n"] += 1
+            expired["tokens"] += cur.cache_write
+            expired["gap"] = max(expired["gap"], gap)
+        else:
+            invalidated["n"] += 1
+            invalidated["tokens"] += cur.cache_write
+    found = []
+    if expired["n"]:
+        found.append(Finding(
+            "cache_rewrite",
+            f"{expired['n']} large contexts re-cached after idle gaps "
+            f"(longest {expired['gap'] / 3600:.1f}h)",
+            "Hand off before stepping away from a large session; resuming it pays for the whole context again.",
+            expired["tokens"],
+        ))
+    if invalidated["n"]:
+        found.append(Finding(
+            "cache_invalidation",
+            f"{invalidated['n']} large contexts re-cached with no idle gap",
+            "Something changed the cached prefix mid-session (tools, settings, instructions); find and avoid it.",
+            invalidated["tokens"],
+        ))
+    return found
+
+
+@detector
+def startup_overhead(s: Session) -> List[Finding]:
+    over = s.startup_context - THRESHOLDS["startup_overhead"]
+    if over <= 0:
+        return []
+    return [Finding(
+        "startup_overhead",
+        f"first turn already carried {round(s.startup_context / 1000)}k tokens of context",
+        "Check enabled plugins, connectors and instruction files for this project (run /context in a fresh session).",
+        over * len(s.turns),
     )]
 
 

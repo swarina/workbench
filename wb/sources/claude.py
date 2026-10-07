@@ -49,6 +49,7 @@ def parse(path: str) -> Optional[Session]:
                 if msg.get("id") not in seen_messages:
                     seen_messages.add(msg.get("id"))
                     u = msg.get("usage") or {}
+                    split = u.get("cache_creation") or {}
                     s.turns.append(Turn(
                         fresh_in=u.get("input_tokens", 0),
                         cache_write=u.get("cache_creation_input_tokens", 0),
@@ -56,6 +57,9 @@ def parse(path: str) -> Optional[Session]:
                         out=u.get("output_tokens", 0),
                         model=msg.get("model", ""),
                         timestamp=rec.get("timestamp", ""),
+                        cache_write_5m=split.get("ephemeral_5m_input_tokens", 0),
+                        cache_write_1h=split.get("ephemeral_1h_input_tokens", 0),
+                        branch=rec.get("gitBranch", ""),
                     ))
                 for block in content if isinstance(content, list) else []:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
