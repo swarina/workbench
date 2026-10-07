@@ -28,7 +28,8 @@ Requires Python 3.9+, git and bash. No third-party packages.
     wb report                      # baseline before changing anything
 
 Then work as usual. At a task or PR boundary run the `handoff` skill and start a fresh
-session; after a week compare `wb report --since 7` against the baseline.
+session. Save the baseline first (`wb report --save baseline`); after a week of use,
+`wb report --since 7 --save after` and `wb compare baseline after` show what changed.
 
 ## Layout
 
@@ -38,7 +39,7 @@ session; after a week compare `wb report --since 7` against the baseline.
 | `skills/<name>/SKILL.md` | Focused procedures, shared by both tools. | On use |
 | `agents/<name>.md` | Claude Code subagents (none yet). | On delegation |
 | `bin/` | Deterministic helpers on PATH: `wb`, `diff-summary`. | When called |
-| `hooks/` | Hook scripts, wired into settings by hand: `context-nudge`. | On the hook event |
+| `hooks/` | Hook scripts: `context-nudge`. Wired into settings by hand locally, by `cloud/setup.sh` on cloud VMs. | On the hook event |
 | `cloud/` | Bootstrap for cloud session VMs: `setup.sh`. | At cloud environment setup |
 | `wb/` | Python package behind `wb` (standard library only). | n/a |
 | `lessons.md` | Evidence-backed failures and where each fix belongs. | Never loaded automatically |
@@ -49,29 +50,36 @@ session; after a week compare `wb report --since 7` against the baseline.
     ./install.sh status            # what is linked, missing or in conflict
     ./install.sh link [--dry-run]
     ./install.sh unlink
+    ./install.sh link --import-instructions
 
 Symlinks only, so edits in this repo take effect immediately. Existing files are never
-overwritten; they are reported as conflicts. Override targets with `CLAUDE_HOME`,
-`CODEX_HOME` and `WB_BIN_DIR`.
+overwritten; they are reported as conflicts. With `--import-instructions`, an existing
+instructions file gets an `@<repo>/instructions.md` import line appended instead of being
+skipped (used on cloud VMs, which ship their own `CLAUDE.md`). Codex is skipped when
+`~/.codex` does not exist. Override targets with `CLAUDE_HOME`, `CODEX_HOME` and
+`WB_BIN_DIR`.
 
 ## Measure
 
     wb report                      # all sessions: cost split, tool output, detected waste
-    wb report --since 7            # last week
+    wb report --since 7            # only usage from the last 7 days, even inside older sessions
     wb report --project <name>
+    wb report --source claude      # claude, codex or all (default)
     wb report --worst 3            # per-session reports for the most expensive sessions
     wb report --session <id>       # one session
     wb report --json               # machine-readable summary
     wb report --by branch          # cost per branch, a proxy for cost per task or PR
     wb report --save baseline      # also save a snapshot to ~/.workbench/snapshots
-    wb compare baseline latest     # before and after, normalized per turn and session
+    wb compare baseline after      # two snapshots (name fragment or path), per turn and session
 
 Token classes are weighted by approximate relative price to rank waste. The estimates
 are for comparison, not accounting.
 
 Detectors: `long_session`, `cache_rewrite` (large context re-cached after an idle gap),
-`cache_invalidation` (re-cached with no gap, so the prefix changed), `startup_overhead`,
-`large_outputs`, `repeat_reads`, `duplicate_calls`, `unbatched_calls`.
+`cache_model_switch` (re-cached because the model changed mid-session),
+`cache_invalidation` (re-cached with no gap or model switch; mostly unexplained, likely
+API errors or server-side misses), `startup_overhead`, `large_outputs`, `repeat_reads`,
+`duplicate_calls`, `unbatched_calls`.
 
 ## Live visibility and enforcement
 
@@ -93,7 +101,9 @@ Use absolute paths so neither depends on `~/.local/bin` being on PATH. The statu
 reads `transcript_path`, `cost.total_cost_usd` and `context_window.context_window_size`
 from the JSON Claude Code sends; the nudge hook reads `session_id` and `transcript_path`.
 Field names were checked against the Claude Code docs on 2026-10-07. Missing fields
-shorten the line rather than break it. Thresholds live in `wb/live.py`.
+shorten the line rather than break it. Thresholds live in `wb/live.py`. On a throwaway
+VM, `wb wire-hook --settings <file>` registers the hook idempotently; it refuses to
+touch a file that is not valid JSON.
 
 ## Cloud sessions
 
@@ -164,4 +174,6 @@ finding behind it, and something that stops earning its keep gets deleted.
 
 Early. The Claude Code transcript source is exercised on real sessions; the Codex source
 is experimental. The `handoff` skill is `experimental` until a before and after
-measurement supports it.
+measurement supports it. The cloud bootstrap is tested locally only, not yet in a real
+cloud VM. Thresholds are tuned on TypeScript, Swift and Python projects, not on Java or
+AWS work.
