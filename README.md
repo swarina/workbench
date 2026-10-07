@@ -79,7 +79,7 @@ need an entry in your Claude Code settings.
 
 Status line, showing context size, session cost and a handoff hint:
 
-    "statusLine": { "type": "command", "command": "wb statusline" }
+    "statusLine": { "type": "command", "command": "/path/to/workbench/bin/wb statusline" }
 
 Handoff nudge: on each prompt, if context is above 200k tokens, one line asks the agent
 to run `handoff` at the next boundary (above 400k: now). It repeats at most every 10
@@ -88,8 +88,10 @@ prompts, and always exits 0:
     "hooks": { "UserPromptSubmit": [ { "hooks": [
       { "type": "command", "command": "/path/to/workbench/hooks/context-nudge" } ] } ] }
 
-The status line reads `transcript_path` and, when present, `cost.total_cost_usd` and
-`context_window.context_window_size` from the JSON Claude Code sends. Missing fields
+Use absolute paths so neither depends on `~/.local/bin` being on PATH. The status line
+reads `transcript_path`, `cost.total_cost_usd` and `context_window.context_window_size`
+from the JSON Claude Code sends; the nudge hook reads `session_id` and `transcript_path`.
+Field names were checked against the Claude Code docs on 2026-10-07. Missing fields
 shorten the line rather than break it. Thresholds live in `wb/live.py`.
 
 ## The loop
