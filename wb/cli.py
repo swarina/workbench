@@ -26,7 +26,9 @@ def load_sessions(source: str, since_days: float, project: str, session: str):
             if cutoff and os.path.getmtime(path) < cutoff:
                 continue
             s = mod.parse(path)
-            if s and (not project or project.lower() in s.project.lower()):
+            if s and cutoff:
+                s = s.since(cutoff)  # count only usage inside the window, not whole sessions
+            if s and s.turns and (not project or project.lower() in s.project.lower()):
                 sessions.append(s)
     return sessions
 
@@ -100,7 +102,7 @@ def main(argv=None) -> int:
     r = sub.add_parser("report", help="where tokens went, and detected waste")
     r.add_argument("--source", choices=list(SOURCES) + ["all"], default="all")
     r.add_argument("--since", type=float, default=0, metavar="DAYS",
-                   help="only sessions modified in the last DAYS")
+                   help="only usage (turns) from the last DAYS, even inside older sessions")
     r.add_argument("--project", default="", help="substring of the project directory name")
     r.add_argument("--session", default="", help="session id (or part of it): per-session report")
     r.add_argument("--worst", type=int, default=0, metavar="N",

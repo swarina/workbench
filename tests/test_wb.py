@@ -311,6 +311,27 @@ class NudgeTest(unittest.TestCase):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class SinceTest(unittest.TestCase):
+    def test_keeps_only_turns_in_window_and_reindexes_calls(self):
+        from wb.model import parse_timestamp
+        s = Session("claude", "s", "p", turns=[
+            Turn(timestamp="2026-01-01T00:00:00Z", cache_read=900_000),
+            Turn(timestamp="2026-01-10T00:00:00Z", cache_read=800_000),
+            Turn(timestamp="2026-01-11T00:00:00Z", cache_read=700_000)],
+            calls=[ToolCall("Read", 0), ToolCall("Read", 1), ToolCall("Bash", 2)])
+        trimmed = s.since(parse_timestamp("2026-01-05T00:00:00Z"))
+        self.assertEqual([t.cache_read for t in trimmed.turns], [800_000, 700_000])
+        self.assertEqual([(c.name, c.turn) for c in trimmed.calls], [("Read", 0), ("Bash", 1)])
+        self.assertEqual(trimmed.peak_context, 800_000)  # context size is not recomputed
+        self.assertEqual(len(s.turns), 3)  # original untouched
+        self.assertEqual(trimmed.startup_context, 900_000)  # true session start, not first kept turn
+
+    def test_empty_when_nothing_in_window(self):
+        from wb.model import parse_timestamp
+        s = Session("claude", "s", "p", turns=[Turn(timestamp="2026-01-01T00:00:00Z")])
+        self.assertEqual(s.since(parse_timestamp("2026-06-01T00:00:00Z")).turns, [])
+
+
 class HookConfigTest(unittest.TestCase):
     def path(self, d):
         return os.path.join(d, "nested", "settings.json")

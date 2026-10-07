@@ -93,6 +93,7 @@ class Session:
     kind: str = "main"  # "main" or "subagent"
     turns: List[Turn] = field(default_factory=list)
     calls: List[ToolCall] = field(default_factory=list)
+    base_startup: Optional[int] = None  # set when turns were trimmed, to keep the true startup
 
     @property
     def peak_context(self) -> int:
@@ -101,11 +102,29 @@ class Session:
     @property
     def startup_context(self) -> int:
         """Context on the first turn: the fixed overhead paid before any work happens."""
+        if self.base_startup is not None:
+            return self.base_startup
         return self.turns[0].context if self.turns else 0
 
     @property
     def cost_units(self) -> float:
         return sum(t.cost_units for t in self.turns)
+
+    def since(self, cutoff: float) -> "Session":
+        """A copy holding only the turns (and their tool calls) at or after `cutoff`, epoch seconds.
+
+        Turns with an unreadable timestamp are kept. Context sizes are unchanged: a turn
+        late in a long session still carries that session's whole context.
+        """
+        keep = [i for i, t in enumerate(self.turns)
+                if (parse_timestamp(t.timestamp) or cutoff) >= cutoff]
+        if not keep:
+            return Session(self.source, self.id, self.path, self.project, self.kind)
+        first = keep[0]
+        calls = [ToolCall(c.name, c.turn - first, c.input, c.output_chars)
+                 for c in self.calls if c.turn >= first]
+        return Session(self.source, self.id, self.path, self.project, self.kind,
+                       [self.turns[i] for i in keep], calls, self.startup_context)
 
     def total(self, key: str) -> int:
         return sum(getattr(t, key) for t in self.turns)
