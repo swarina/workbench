@@ -294,6 +294,49 @@ class NudgeTest(unittest.TestCase):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class HookConfigTest(unittest.TestCase):
+    def path(self, d):
+        return os.path.join(d, "nested", "settings.json")
+
+    def test_creates_file_and_is_idempotent(self):
+        from wb import hookconfig
+        with tempfile.TemporaryDirectory() as d:
+            p = self.path(d)
+            self.assertTrue(hookconfig.ensure_hook(p, "UserPromptSubmit", "/x/hook"))
+            self.assertFalse(hookconfig.ensure_hook(p, "UserPromptSubmit", "/x/hook"))
+            with open(p) as fh:
+                data = json.load(fh)
+            self.assertEqual(data["hooks"]["UserPromptSubmit"],
+                             [{"hooks": [{"type": "command", "command": "/x/hook"}]}])
+
+    def test_preserves_existing_settings_and_hooks(self):
+        from wb import hookconfig
+        with tempfile.TemporaryDirectory() as d:
+            p = self.path(d)
+            os.makedirs(os.path.dirname(p))
+            with open(p, "w") as fh:
+                json.dump({"model": "x", "hooks": {"UserPromptSubmit": [
+                    {"hooks": [{"type": "command", "command": "/other"}]}], "Stop": []}}, fh)
+            hookconfig.ensure_hook(p, "UserPromptSubmit", "/x/hook")
+            with open(p) as fh:
+                data = json.load(fh)
+            self.assertEqual(data["model"], "x")
+            self.assertEqual(len(data["hooks"]["UserPromptSubmit"]), 2)
+            self.assertIn("Stop", data["hooks"])
+
+    def test_invalid_json_is_not_overwritten(self):
+        from wb import hookconfig
+        with tempfile.TemporaryDirectory() as d:
+            p = self.path(d)
+            os.makedirs(os.path.dirname(p))
+            with open(p, "w") as fh:
+                fh.write("{not json")
+            with self.assertRaises(ValueError):
+                hookconfig.ensure_hook(p, "UserPromptSubmit", "/x/hook")
+            with open(p) as fh:
+                self.assertEqual(fh.read(), "{not json")
+
+
 class RepoTest(unittest.TestCase):
     def test_repo_passes_its_own_lint(self):
         self.assertEqual(check.check(ROOT), [])

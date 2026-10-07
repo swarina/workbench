@@ -1,4 +1,4 @@
-"""wb: Workbench command line. Subcommands: report, compare, statusline, check."""
+"""wb: Workbench command line. Subcommands: report, compare, statusline, wire-hook, check."""
 import argparse
 import json
 import os
@@ -7,7 +7,7 @@ import time
 
 from . import check as check_mod
 from . import compare as compare_mod
-from . import report, statusline
+from . import hookconfig, report, statusline
 from .detectors import run_all
 from .sources import SOURCES
 
@@ -74,6 +74,17 @@ def cmd_statusline(args) -> int:
     return 0
 
 
+def cmd_wire_hook(args) -> int:
+    command = os.path.join(REPO_ROOT, "hooks", "context-nudge")
+    try:
+        changed = hookconfig.ensure_hook(os.path.expanduser(args.settings), "UserPromptSubmit", command)
+    except ValueError as exc:
+        print(f"{args.settings} is not valid JSON, left unchanged: {exc}", file=sys.stderr)
+        return 1
+    print(("added nudge hook to " if changed else "nudge hook already in ") + args.settings)
+    return 0
+
+
 def cmd_check(args) -> int:
     problems = check_mod.check(REPO_ROOT)
     for p in problems:
@@ -108,6 +119,10 @@ def main(argv=None) -> int:
 
     sl = sub.add_parser("statusline", help="status line for Claude Code (reads JSON on stdin)")
     sl.set_defaults(fn=cmd_statusline)
+
+    w = sub.add_parser("wire-hook", help="add the nudge hook to a settings file (for cloud VMs)")
+    w.add_argument("--settings", required=True, help="settings.json to update, e.g. ~/.claude/settings.json")
+    w.set_defaults(fn=cmd_wire_hook)
 
     c = sub.add_parser("check", help="lint this repo (budgets, skill frontmatter)")
     c.set_defaults(fn=cmd_check)
